@@ -1,0 +1,95 @@
+pipeline {
+    agent any 
+    
+     tools{
+        jdk 'jdk17'
+        maven 'maven3'
+    }
+     environment{
+        //replace the tool name with original name which is configured in global tool configure section
+        SCANNER_HOME= tool 'sonar-scanner'
+    }
+    stages {
+        stage('Git Checkout') {
+            steps {
+                // Checkout code from GitHub
+                git branch: 'master',
+                    credentialsId: 'github-credentials',
+                    url: 'https://github.com/Banoth-Renuka/My-Java-project.git'
+            }
+        }
+        stage('Clean') {
+            steps {
+                // Clean the workspace
+                sh 'mvn clean'
+            }
+        }
+        stage('Compile') {
+            steps {
+                // Compile the code
+                sh 'mvn clean compile -DskipTests=true'
+            }
+        }
+        stage('Code Analysis') {
+            steps {
+                // Run SonarQube analysis
+                withSonarQubeEnv('sonarqube') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+        stage('Security Scanning') {
+            steps {
+                // Run OWASP Dependency-Check
+                dependencyCheck additionalArguments: '--format HTML', odcInstallation: 'dependency-check'
+            }
+        }
+        stage('Code Coverage') {
+            steps {
+                // Run JaCoCo code coverage
+                sh 'mvn jacoco:report'
+            }
+        }
+        stage('Package') {
+            steps {
+                // Package the application
+                sh 'mvn package'
+            }
+        }
+        stage('Deploy to Nexus') {
+            steps {
+                // Deploy artifact to Nexus
+                nexusArtifactUploader(
+                    nexusVersion: 'nexus3',
+                    protocol: 'http',
+                    nexusUrl: 'http://nexus-server:8081',
+                    groupId: 'com.example',
+                    version: '1.0',
+                    repository: 'my-java-app-repo',
+                    credentialsId: 'nexus-credentials'
+                )
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                // Build Docker image
+                sh 'docker build -t my-java-app:latest .'
+            }
+        }
+        stage('Push Docker Image') {
+            steps {
+                // Push Docker image to Docker Hub
+                withDockerRegistry([credentialsId: 'docker-credentials']) {
+                    sh 'docker tag my-java-app:latest username/my-java-app:latest'
+                    sh 'docker push username/my-java-app:latest'
+                }
+            }
+        }
+        stage('Deploy to Docker') {
+            steps {
+                // Deploy to Docker container
+                sh 'docker run -d -p 8080:8080 username/my-java-app:latest'
+            }
+        }
+    }
+}
